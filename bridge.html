@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Geo-Harmonic Engine V4.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --color-accent: #88ddff;
+            --color-bg: #050508;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-bg);
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            overflow: hidden;
+        }
+
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-btn {
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background-color: rgba(136, 221, 255, 0.2);
+            color: var(--color-accent);
+            border-color: var(--color-accent);
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 92vw;
+            height: 92vw;
+            max-width: 500px;
+            max-height: 500px;
+            background: #0a0a10;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+            overflow: hidden;
+            touch-action: none;
+            margin: 0 auto;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #1a1a20;
+            border-radius: 4px;
+            outline: none;
+            margin: 6px 0;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--color-accent);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 0 3px #050508;
+            transition: all 0.1s;
+        }
+        input[type="range"]::-webkit-slider-thumb:active {
+            transform: scale(1.2);
+            box-shadow: 0 0 0 4px #050508, 0 0 10px var(--color-accent);
+        }
+
+        .panel-title {
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 6px;
+            margin-bottom: 10px;
+            color: #ccc;
+            font-size: 0.75rem;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.6rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 2px;
+        }
+
+        .vu-meter {
+            height: 4px;
+            background: #1a1a20;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .vu-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #88ddff, #ffdd88);
+            width: 0%;
+            transition: width 0.05s linear;
+        }
+
+        .btn {
+            padding: 8px 6px;
+            font-size: 0.65rem;
+            border-radius: 6px;
+            transition: all 0.15s;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .mobile-panel {
+            padding: 12px;
+            border-radius: 12px;
+        }
+
+        /* NEW: Audio active indicator */
+        .audio-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--color-accent);
+            font-size: 0.6rem;
+            letter-spacing: 0.2em;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+            text-transform: uppercase;
+        }
+        .audio-indicator.active {
+            opacity: 0.7;
+        }
+    </style>
+<base target="_blank">
+</head>
+<body class="flex flex-col items-center justify-start h-screen p-3 gap-3">
+
+    <!-- Header with Tabs -->
+    <div class="w-full max-w-md flex gap-1 bg-[#0a0a10] rounded-lg p-1 border border-white/10">
+        <button id="tab-topo" class="tab-btn active flex-1 py-2 px-3 text-xs uppercase tracking-wider rounded-md border border-transparent text-gray-400">
+            Topography
+        </button>
+        <button id="tab-sonics" class="tab-btn flex-1 py-2 px-3 text-xs uppercase tracking-wider rounded-md border border-transparent text-gray-400">
+            Sonics
+        </button>
+    </div>
+
+    <!-- Canvas -->
+    <div id="canvas-container" class="rounded-xl">
+        <canvas id="topoCanvas"></canvas>
+        
+        <!-- Enhanced Readout -->
+        <div id="readout" class="absolute top-3 right-3 text-right pointer-events-none">
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Flux</div>
+            <div class="text-sm font-bold text-cyan-400" id="status-val">0.00%</div>
+            <div class="vu-meter">
+                <div class="vu-fill" id="vu-fill"></div>
+            </div>
+        </div>
+
+        <!-- NEW: Audio Active Indicator -->
+        <div id="audio-indicator" class="audio-indicator">AUDIO ACTIVE</div>
+
+        <!-- Start Overlay - activates on first tap -->
+        <div id="start-overlay" class="absolute inset-0 flex items-center justify-center transition-opacity duration-300 z-10 bg-black/80 backdrop-blur-sm">
+            <div id="start-text" class="text-white text-xs tracking-widest uppercase border border-white/30 p-4 rounded-lg bg-black/50 cursor-pointer">
+                Tap Canvas to Begin
+            </div>
+        </div>
+    </div>
+
+    <!-- Control Panels Container -->
+    <div class="w-full max-w-md flex-1 flex flex-col gap-3 overflow-hidden">
+        
+        <!-- Tab 1: Topography -->
+        <div id="topo-tab" class="tab-content active bg-[#0a0a10] mobile-panel border border-white/10 shadow-lg">
+            <div class="panel-title">Topography & Drainage</div>
+            
+            <div class="space-y-3">
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Viscosity</span>
+                        <span id="val-visc" class="text-cyan-400 font-mono">0.006</span>
+                    </div>
+                    <input type="range" id="visc-slider" min="0.001" max="0.02" step="0.001" value="0.006">
+                </div>
+                
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Transfer</span>
+                        <span id="val-transfer" class="text-cyan-400 font-mono">0.5</span>
+                    </div>
+                    <input type="range" id="transfer-slider" min="0.1" max="1.0" step="0.05" value="0.5">
+                </div>
+                
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Isolines</span>
+                        <span id="val-density" class="text-cyan-400 font-mono">12</span>
+                    </div>
+                    <input type="range" id="density-slider" min="6" max="24" step="2" value="12">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Decay Speed</span>
+                        <span id="val-speed" class="text-cyan-400 font-mono">1.0x</span>
+                    </div>
+                    <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button class="btn flex-1 bg-white/5 hover:bg-white/10 text-gray-400 active" id="mode-wire">Wireframe</button>
+                    <button class="btn flex-1 bg-white/5 hover:bg-white/10 text-gray-400" id="mode-fluid">Density</button>
+                </div>
+
+                <button class="btn w-full bg-red-800/20 hover:bg-red-800/40 text-red-300" id="btn-reset">Reset Field</button>
+            </div>
+        </div>
+
+        <!-- Tab 2: Sonics -->
+        <div id="sonics-tab" class="tab-content bg-[#0a0a10] mobile-panel border border-white/10 shadow-lg">
+            <div class="panel-title">Harmonics & Echoes</div>
+            
+            <div class="space-y-3">
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Harmony</span>
+                    </div>
+                    <select id="harmony-select" class="w-full bg-white/5 border border-white/10 text-white p-2 rounded-lg text-xs focus:ring-cyan-500 focus:border-cyan-500">
+                        <option value="minor9">Minor 9th</option>
+                        <option value="major7">Major 7th</option>
+                        <option value="sus4">Suspended 4th</option>
+                    </select>
+                </div>
+                
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Reverb Mix</span>
+                        <span id="val-wet" class="text-cyan-400 font-mono">25%</span>
+                    </div>
+                    <input type="range" id="reverb-wet-slider" min="0" max="60" step="1" value="25">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Echo Delay</span>
+                        <span id="val-delay-time" class="text-cyan-400 font-mono">0.30s</span>
+                    </div>
+                    <input type="range" id="delay-time-slider" min="0.1" max="0.8" step="0.01" value="0.3">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Feedback</span>
+                        <span id="val-feedback" class="text-cyan-400 font-mono">20%</span>
+                    </div>
+                    <input type="range" id="delay-feedback-slider" min="0" max="60" step="1" value="20">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span>Line Clarity</span>
+                        <span id="val-clarity" class="text-cyan-400 font-mono">80%</span>
+                    </div>
+                    <input type="range" id="clarity-slider" min="30" max="100" step="1" value="80">
+                </div>
+
+                <div class="pt-2">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Sound Field</div>
+                    <div class="vu-meter">
+                        <div class="vu-fill" id="vu-bottom"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- HAPTIC FEEDBACK UTIL ---
+        function hapticClick(intensity = 15) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(intensity);
+            }
+        }
+
+        function hapticSlide() {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(3);
+            }
+        }
+
+        // --- CORE CONFIGURATION ---
+        const LOGICAL_SIZE = 24;
+        const RENDER_RES = 100;
+        const TICK_RATE = 16;
+
+        const C4 = 261.63;
+        const NOTE_FREQS = new Array(127).fill(0).map((_, i) => C4 * Math.pow(2, (i - 60) / 12));
+        const CHORDS = {
+            'minor9': [0, 3, 7, 10, 14],
+            'major7': [0, 4, 7, 11, 14],
+            'sus4':   [0, 5, 7, 10, 14]
+        };
+
+        // --- STATE ---
+        let pressureGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE).fill(0);
+        let viscosityGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE).fill(0);
+        let highResGrid = new Float32Array(RENDER_RES * RENDER_RES).fill(0);
+        let contourEnergy = new Array(24).fill(0);
+        
+        let visualParams = {
+            decayRate: 0.006,
+            transferRate: 0.5,
+            contourLevels: 12,
+            renderMode: 'wire',
+            decaySpeed: 1.0
+        };
+        
+        let audioParams = {
+            harmony: 'minor9',
+            reverbWet: 0.25,
+            delayTime: 0.3,
+            delayFeedback: 0.20,
+            modDepth: 0.004,
+            lineClarity: 0.8
+        };
+
+        let isPlaying = true;
+        let lastTick = 0;
+        let time = 0;
+        let vuHistory = new Array(20).fill(0);
+
+        // Canvas
+        const canvas = document.getElementById('topoCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        const startOverlay = document.getElementById('start-overlay');
+        const audioIndicator = document.getElementById('audio-indicator');
+        let width, height;
+
+        // Audio
+        let audioCtx, masterGain, pads = [], contourOscillators = [];
+        let verb, wetGain, dryGain, delayNode, feedbackGain, highpassFilter;
+        let isAudioInit = false;
+
+        // --- AUDIO MODULE ---
+        class CinematicPad {
+            constructor(ctx, freq, isContour = false, lineIndex = 0) {
+                this.ctx = ctx;
+                this.baseFreq = freq;
+                this.isContour = isContour;
+                this.lineIndex = lineIndex;
+                
+                // UNIQUE WAVEFORM PER LINE for sonic separation
+                const waveforms = ['sawtooth', 'square', 'triangle'];
+                this.osc = ctx.createOscillator();
+                this.osc.type = waveforms[lineIndex % 3];
+                
+                // UNIQUE FILTER TYPE per line
+                const filterTypes = ['bandpass', 'lowpass', 'highpass'];
+                this.filter = ctx.createBiquadFilter();
+                this.filter.type = isContour ? filterTypes[lineIndex % 3] : 'lowpass';
+                this.filter.Q.value = isContour ? 10 + lineIndex * 2 : 2;
+                
+                this.gain = ctx.createGain();
+                this.gain.gain.value = isContour ? 0.0001 : 0.00001;
+                
+                // UNIQUE MODULATION RATE per line
+                this.modRate = 1.0 + lineIndex * 0.4;
+                this.phaseOffset = lineIndex * Math.PI / 3;
+                
+                this.osc.connect(this.filter);
+                this.filter.connect(this.gain);
+                
+                if (isContour) {
+                    this.gain.connect(masterGain);
+                } else {
+                    this.pan = ctx.createStereoPanner();
+                    this.pan.pan.value = (lineIndex % 7) / 7 * 2 - 1;
+                    this.gain.connect(this.pan);
+                    this.pan.connect(masterGain);
+                }
+                
+                this.osc.start();
+            }
+            
+            update(energy) {
+                const now = this.ctx.currentTime;
+                const attack = this.isContour ? 0.03 : 0.6;
+                const targetGain = this.isContour ? energy * 0.06 : (0.04 + energy * 0.08);
+                
+                this.gain.gain.setTargetAtTime(targetGain, now, attack);
+                
+                const modAmount = this.isContour ? 0.008 : 0.004;
+                const freqMod = this.baseFreq * modAmount * Math.sin(now * this.modRate + this.phaseOffset);
+                this.osc.frequency.setValueAtTime(this.baseFreq + freqMod, now);
+                
+                const filterRange = this.isContour ? 500 + this.lineIndex * 100 : 2000;
+                const targetFreq = 100 + energy * filterRange;
+                this.filter.frequency.setTargetAtTime(targetFreq, now, this.isContour ? 0.05 : 1.0);
+            }
+            
+            stop() {
+                const now = this.ctx.currentTime;
+                this.gain.gain.cancelScheduledValues(now);
+                this.gain.gain.setTargetAtTime(0, now, 0.1);
+                this.osc.stop(now + 0.2);
+            }
+        }
+        
+        function createReverbBuffer(time) {
+            const rate = audioCtx.sampleRate;
+            const len = rate * time;
+            const buffer = audioCtx.createBuffer(2, len, rate);
+            for(let i=0; i<len; i++) {
+                const decay = Math.pow(1 - i/len, 6);
+                const sample = (Math.random()*2-1) * decay * 0.25;
+                buffer.getChannelData(0)[i] = sample;
+                buffer.getChannelData(1)[i] = sample;
+            }
+            return buffer;
+        }
+
+        function updateReverb() {
+            if (!isAudioInit) return;
+            const now = audioCtx.currentTime;
+            wetGain.gain.setTargetAtTime(audioParams.reverbWet, now, 0.05);
+            dryGain.gain.setTargetAtTime(1.0 - audioParams.reverbWet, now, 0.05);
+        }
+
+        function updateDelay() {
+            if (!isAudioInit) return;
+            const now = audioCtx.currentTime;
+            delayNode.delayTime.setTargetAtTime(audioParams.delayTime, now, 0.05);
+            feedbackGain.gain.setTargetAtTime(audioParams.delayFeedback, now, 0.05);
+        }
+
+        function updateHarmony() {
+            if (!isAudioInit) return;
+            pads.forEach(p => p.stop());
+            pads = [];
+            const freqs = getChordFrequencies(audioParams.harmony);
+            freqs.forEach((f, i) => pads.push(new CinematicPad(audioCtx, f, false, i)));
+        }
+
+        function updateContourOscillators() {
+            if (!isAudioInit) return;
+            
+            const levels = visualParams.contourLevels;
+            while (contourOscillators.length < levels) {
+                const freq = C4 * Math.pow(2, contourOscillators.length / Math.max(levels, 1) * 4);
+                contourOscillators.push(new CinematicPad(audioCtx, freq, true, contourOscillators.length));
+            }
+            while (contourOscillators.length > levels) {
+                contourOscillators.pop().stop();
+            }
+        }
+
+        function modulateAudio(totalEnergy) {
+            if(!isAudioInit) return;
+            
+            const now = audioCtx.currentTime;
+            const intensity = Math.min(totalEnergy / 5, 1.0);
+            
+            // Modulate harmonic pads
+            pads.forEach(p => p.update(intensity * 0.7));
+            
+            // Modulate contour oscillators - EACH LINE'S UNIQUE SOUND
+            contourEnergy.forEach((energy, level) => {
+                if (contourOscillators[level]) {
+                    const normalized = Math.min(energy * audioParams.lineClarity * 50, 1.0);
+                    contourOscillators[level].update(normalized);
+                }
+            });
+            
+            // Update VU meters
+            const vuPercent = intensity * 100;
+            document.getElementById('status-val').innerText = `${vuPercent.toFixed(1)}%`;
+            document.getElementById('vu-fill').style.width = `${vuPercent}%`;
+            
+            vuHistory.shift();
+            vuHistory.push(vuPercent);
+            const avgVU = vuHistory.reduce((a,b) => a+b) / vuHistory.length;
+            document.getElementById('vu-bottom').style.width = `${avgVU}%`;
+        }
+
+        async function initAudio() {
+            if (isAudioInit) return;
+            const AC = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AC();
+            
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 1.0;
+
+            // Highpass for clarity
+            highpassFilter = audioCtx.createBiquadFilter();
+            highpassFilter.type = 'highpass';
+            highpassFilter.frequency.value = 220;
+            
+            // FX chains
+            delayNode = audioCtx.createDelay(1.0);
+            feedbackGain = audioCtx.createGain();
+            verb = audioCtx.createConvolver();
+            verb.buffer = createReverbBuffer(2.0);
+            wetGain = audioCtx.createGain();
+            dryGain = audioCtx.createGain();
+            
+            // Connect
+            masterGain.connect(delayNode);
+            delayNode.connect(feedbackGain);
+            feedbackGain.connect(delayNode);
+            masterGain.connect(dryGain);
+            dryGain.connect(highpassFilter);
+            highpassFilter.connect(audioCtx.destination);
+            delayNode.connect(verb);
+            verb.connect(wetGain);
+            wetGain.connect(highpassFilter);
+
+            // CREATE ALL SOUND SOURCES
+            updateContourOscillators(); 
+            updateHarmony();
+            
+            // PRIME oscillators
+            const now = audioCtx.currentTime;
+            [...contourOscillators, ...pads].forEach(osc => {
+                osc.gain.gain.setValueAtTime(0.0001, now);
+            });
+
+            // STARTUP CONFIRMATION SOUND - plays the chord briefly
+            pads.forEach((pad, i) => {
+                setTimeout(() => {
+                    pad.gain.gain.setTargetAtTime(0.1, now + i * 0.1, 0.05);
+                    setTimeout(() => {
+                        pad.gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.1);
+                    }, 300);
+                }, i * 100);
+            });
+
+            // Apply initial parameters
+            wetGain.gain.value = audioParams.reverbWet;
+            dryGain.gain.value = 1.0 - audioParams.reverbWet;
+            delayNode.delayTime.value = audioParams.delayTime;
+            feedbackGain.gain.value = audioParams.delayFeedback;
+
+            // Resume context
+            if(audioCtx.state === 'suspended') {
+                try {
+                    await audioCtx.resume();
+                } catch(e) {
+                    console.error("AudioContext resume failed:", e);
+                }
+            }
+
+            isAudioInit = true;
+            
+            // Show audio indicator
+            audioIndicator.classList.add('active');
+            
+            // Hide overlay
+            startOverlay.style.opacity = 0;
+            setTimeout(() => startOverlay.style.display = 'none', 300);
+            
+            hapticClick(20);
+        }
+
+        // --- SIMULATION MODULE ---
+        function getLIdx(x, y) { return y * LOGICAL_SIZE + x; }
+        function getRIdx(x, y) { return y * RENDER_RES + x; }
+        function getChordFrequencies(chordKey) {
+            const intervals = CHORDS[chordKey];
+            const baseNote = 36;
+            const notes = [
+                baseNote,              
+                baseNote + intervals[0] + 12, 
+                baseNote + intervals[1] + 12, 
+                baseNote + intervals[2] + 12, 
+                baseNote + intervals[3] + 12, 
+                baseNote + intervals[4] + 12, 
+                baseNote + intervals[0] + 24 
+            ];
+            return notes.map(n => NOTE_FREQS[n]);
+        }
+
+        function setCell(gx, gy, val) {
+            if (gx >= 0 && gx < LOGICAL_SIZE && gy >= 0 && gy < LOGICAL_SIZE) {
+                const idx = getLIdx(gx, gy);
+                pressureGrid[idx] = Math.min(pressureGrid[idx] + val, 3.0);
+            }
+        }
+
+        function tick() {
+            time += 0.01 * visualParams.decaySpeed;
+            let totalEnergy = 0;
+
+            const nextPressure = new Float32Array(pressureGrid);
+            const nextVisc = new Float32Array(viscosityGrid);
+            
+            const DAMPING = 0.99;
+            const ALPHA = 0.05;
+
+            // Reset contour energy tracking
+            contourEnergy.fill(0);
+
+            for (let y = 1; y < LOGICAL_SIZE - 1; y++) {
+                for (let x = 1; x < LOGICAL_SIZE - 1; x++) {
+                    const idx = getLIdx(x, y);
+                    
+                    // Pressure diffusion
+                    let pressureSum = 0;
+                    pressureSum += pressureGrid[getLIdx(x-1, y)] + pressureGrid[getLIdx(x+1, y)] + pressureGrid[getLIdx(x, y-1)] + pressureGrid[getLIdx(x, y+1)];
+                    pressureSum += pressureGrid[getLIdx(x-1, y-1)] + pressureGrid[getLIdx(x+1, y-1)] + pressureGrid[getLIdx(x-1, y+1)] + pressureGrid[getLIdx(x+1, y+1)];
+                    
+                    nextPressure[idx] = (pressureGrid[idx] * 0.4) + (pressureSum * 0.075);
+                    nextPressure[idx] *= DAMPING;
+
+                    // Transfer to viscosity
+                    const transfer = (pressureGrid[idx] * visualParams.transferRate * ALPHA);
+                    nextVisc[idx] = viscosityGrid[idx] + transfer;
+                    nextVisc[idx] = Math.max(nextVisc[idx] - visualParams.decayRate, 0);
+
+                    totalEnergy += nextVisc[idx];
+                }
+            }
+            pressureGrid = nextPressure;
+            viscosityGrid = nextVisc;
+
+            // Calculate per-level energy for contour sounds
+            const levels = visualParams.contourLevels;
+            for (let y = 0; y < LOGICAL_SIZE; y++) {
+                for (let x = 0; x < LOGICAL_SIZE; x++) {
+                    const val = viscosityGrid[getLIdx(x, y)];
+                    const level = Math.min(Math.floor((val / 3.0) * levels), levels - 1);
+                    if (level >= 0 && val > 0.01) {
+                        contourEnergy[level] += val;
+                    }
+                }
+            }
+
+            // Upscale grid
+            const factor = (LOGICAL_SIZE - 1) / (RENDER_RES - 1);
+            for (let y = 0; y < RENDER_RES; y++) {
+                for (let x = 0; x < RENDER_RES; x++) {
+                    const lx = x * factor;
+                    const ly = y * factor;
+                    const x0 = Math.floor(lx); const y0 = Math.floor(ly);
+                    const x1 = Math.min(x0 + 1, LOGICAL_SIZE - 1);
+                    const y1 = Math.min(y0 + 1, LOGICAL_SIZE - 1);
+                    const tx = lx - x0; const ty = ly - y0;
+                    
+                    const v00 = viscosityGrid[getLIdx(x0, y0)];
+                    const v10 = viscosityGrid[getLIdx(x1, y0)];
+                    const v01 = viscosityGrid[getLIdx(x0, y1)];
+                    const v11 = viscosityGrid[getLIdx(x1, y1)];
+                    
+                    const top = v00 * (1 - tx) + v10 * tx;
+                    const bot = v01 * (1 - tx) + v11 * tx;
+                    highResGrid[getRIdx(x, y)] = top * (1 - ty) + bot * ty;
+                }
+            }
+
+            // Modulate audio if initialized
+            if (isAudioInit) {
+                modulateAudio(totalEnergy);
+            }
+        }
+
+        // --- RENDERING MODULE ---
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            drawBackgroundGrid();
+
+            if (visualParams.renderMode === 'wire') {
+                drawWireframe();
+            } else {
+                drawFluidDensity();
+            }
+        }
+
+        function drawBackgroundGrid() {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            const step = width / 10;
+            
+            ctx.beginPath();
+            for(let x=0; x<=width; x+=step) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
+            for(let y=0; y<=height; y+=step) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
+            ctx.stroke();
+        }
+
+        function drawWireframe() {
+            const cellW = width / (RENDER_RES - 1);
+            const cellH = height / (RENDER_RES - 1);
+            const levels = visualParams.contourLevels;
+
+            for (let l = 1; l <= levels; l++) {
+                const threshold = (l / Math.max(levels, 1)) * 2.0;
+                const hue = 180 + (l/levels) * 60;
+                const alpha = 0.1 + (l/levels) * 0.8;
+                ctx.strokeStyle = `hsla(${hue}, 80%, 65%, ${alpha})`;
+                ctx.lineWidth = 2.0 - (l/levels * 0.7);
+
+                ctx.beginPath();
+                for (let y = 0; y < RENDER_RES - 1; y++) {
+                    for (let x = 0; x < RENDER_RES - 1; x++) {
+                        const v0 = highResGrid[getRIdx(x, y)];
+                        const v1 = highResGrid[getRIdx(x+1, y)];
+                        const v2 = highResGrid[getRIdx(x+1, y+1)];
+                        const v3 = highResGrid[getRIdx(x, y+1)];
+                        
+                        const bin = (v0>threshold?8:0) | (v1>threshold?4:0) | (v2>threshold?2:0) | (v3>threshold?1:0);
+                        if (bin === 0 || bin === 15) continue;
+
+                        const a = {x: x + (threshold-v0)/(v1-v0), y: y};
+                        const b = {x: x + 1, y: y + (threshold-v1)/(v2-v1)};
+                        const c = {x: x + (threshold-v3)/(v2-v3), y: y + 1};
+                        const d = {x: x, y: y + (threshold-v0)/(v3-v0)};
+                        
+                        const sx = v => v.x * cellW;
+                        const sy = v => v.y * cellH;
+
+                        switch(bin) {
+                            case 1: case 14: ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); break;
+                            case 2: case 13: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); break;
+                            case 3: case 12: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(d), sy(d)); break;
+                            case 4: case 11: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); break;
+                            case 5: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); break;
+                            case 6: case 9: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(c), sy(c)); break;
+                            case 7: case 8: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); break;
+                            case 10: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); break;
+                        }
+                    }
+                }
+                ctx.stroke();
+            }
+        }
+
+        function drawFluidDensity() {
+            const cellW = width / (RENDER_RES - 1);
+            const cellH = height / (RENDER_RES - 1);
+            
+            for (let i = 0; i < highResGrid.length; i++) {
+                const val = highResGrid[i];
+                if (val < 0.01) continue;
+                const x = (i % RENDER_RES) * cellW;
+                const y = Math.floor(i / RENDER_RES) * cellH;
+                
+                const hue = 220 - Math.min(val * 12, 40);
+                const alpha = Math.min(val * 0.5, 0.5);
+                ctx.fillStyle = `hsla(${hue}, 80%, 65%, ${alpha})`;
+                ctx.fillRect(x, y, cellW+1, cellH+1);
+            }
+        }
+
+        function loop(timestamp) {
+            if (isPlaying) {
+                if (timestamp - lastTick > TICK_RATE) {
+                    tick();
+                    lastTick = timestamp;
+                }
+            }
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // --- INTERACTION & UI ---
+        async function handleInteraction(e) {
+            e.preventDefault();
+            
+            // Initialize audio on FIRST canvas touch
+            if (!isAudioInit) {
+                await initAudio();
+            }
+            
+            const rect = container.getBoundingClientRect();
+            const touches = e.touches || [{clientX: e.clientX, clientY: e.clientY}];
+            
+            for (let i = 0; i < touches.length; i++) {
+                const x = touches[i].clientX - rect.left;
+                const y = touches[i].clientY - rect.top;
+                
+                const gx = Math.floor((x / width) * LOGICAL_SIZE);
+                const gy = Math.floor((y / height) * LOGICAL_SIZE);
+                
+                // Add strong energy to grid
+                setCell(gx, gy, 1.5);
+                hapticClick(12);
+            }
+        }
+
+        function setupEventListeners() {
+            // Tab switching
+            const tabTopo = document.getElementById('tab-topo');
+            const tabSonics = document.getElementById('tab-sonics');
+            const topoContent = document.getElementById('topo-tab');
+            const sonicsContent = document.getElementById('sonics-tab');
+            
+            tabTopo.addEventListener('click', () => {
+                topoContent.classList.add('active');
+                sonicsContent.classList.remove('active');
+                tabTopo.classList.add('active');
+                tabSonics.classList.remove('active');
+                hapticClick(12);
+            });
+            
+            tabSonics.addEventListener('click', () => {
+                sonicsContent.classList.add('active');
+                topoContent.classList.remove('active');
+                tabSonics.classList.add('active');
+                tabTopo.classList.remove('active');
+                hapticClick(12);
+            });
+
+            // Canvas interaction
+            canvas.addEventListener('mousedown', e => { 
+                handleInteraction(e); 
+                canvas.addEventListener('mousemove', handleInteraction); 
+            });
+            window.addEventListener('mouseup', () => canvas.removeEventListener('mousemove', handleInteraction));
+            canvas.addEventListener('touchstart', e => { 
+                handleInteraction(e); 
+                canvas.addEventListener('touchmove', handleInteraction, {passive: false});
+            }, {passive: false});
+            canvas.addEventListener('touchend', () => canvas.removeEventListener('touchmove', handleInteraction));
+            
+            startOverlay.addEventListener('click', handleInteraction, { once: true });
+
+            // Sliders
+            const sliders = [
+                {id: 'density-slider', valId: 'val-density', key: 'contourLevels', type: 'int', postUpdate: () => updateContourOscillators()},
+                {id: 'visc-slider', valId: 'val-visc', key: 'decayRate', type: 'float'},
+                {id: 'transfer-slider', valId: 'val-transfer', key: 'transferRate', type: 'float'},
+                {id: 'speed-slider', valId: 'val-speed', key: 'decaySpeed', type: 'float', unit: 'x'},
+                {id: 'reverb-wet-slider', valId: 'val-wet', key: 'reverbWet', type: 'percent', postUpdate: () => updateReverb()},
+                {id: 'delay-time-slider', valId: 'val-delay-time', key: 'delayTime', type: 'float', postUpdate: () => updateDelay()},
+                {id: 'delay-feedback-slider', valId: 'val-feedback', key: 'delayFeedback', type: 'percent', postUpdate: () => updateDelay()},
+                {id: 'clarity-slider', valId: 'val-clarity', key: 'lineClarity', type: 'percent'}
+            ];
+
+            sliders.forEach(slider => {
+                const element = document.getElementById(slider.id);
+                const valElement = document.getElementById(slider.valId);
+                
+                element.addEventListener('input', e => {
+                    let value;
+                    if (slider.type === 'int') {
+                        value = parseInt(e.target.value);
+                    } else if (slider.type === 'float') {
+                        value = parseFloat(e.target.value);
+                    } else if (slider.type === 'percent') {
+                        value = parseInt(e.target.value) / 100;
+                    }
+                    
+                    if (slider.key === 'reverbWet' || slider.key === 'delayTime' || slider.key === 'delayFeedback' || slider.key === 'lineClarity') {
+                        audioParams[slider.key] = value;
+                    } else {
+                        visualParams[slider.key] = value;
+                    }
+                    
+                    let displayValue;
+                    if (slider.type === 'float') {
+                        displayValue = value.toFixed(2);
+                    } else if (slider.type === 'percent') {
+                        displayValue = `${parseInt(e.target.value)}%`;
+                    } else if (slider.type === 'int') {
+                        displayValue = value;
+                    } else {
+                        displayValue = e.target.value;
+                    }
+                    
+                    if (slider.unit && slider.type !== 'percent') {
+                        displayValue += slider.unit;
+                    }
+                    valElement.innerText = displayValue;
+                    
+                    if (slider.postUpdate) slider.postUpdate();
+                    hapticSlide();
+                });
+            });
+
+            // Visual mode buttons
+            const btnWire = document.getElementById('mode-wire');
+            const btnFluid = document.getElementById('mode-fluid');
+            btnWire.addEventListener('click', () => { 
+                visualParams.renderMode = 'wire'; 
+                btnWire.classList.add('active'); 
+                btnFluid.classList.remove('active');
+                hapticClick(10);
+            });
+            btnFluid.addEventListener('click', () => { 
+                visualParams.renderMode = 'fluid'; 
+                btnFluid.classList.add('active'); 
+                btnWire.classList.remove('active');
+                hapticClick(10);
+            });
+
+            // Reset button
+            document.getElementById('btn-reset').addEventListener('click', () => { 
+                pressureGrid.fill(0);
+                viscosityGrid.fill(0);
+                hapticClick(20);
+            });
+            
+            // Harmony selector
+            document.getElementById('harmony-select').addEventListener('change', e => {
+                audioParams.harmony = e.target.value;
+                updateHarmony();
+                hapticClick(15);
+            });
+
+            // Prevent context menu / selection
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
+            canvas.addEventListener('selectstart', e => e.preventDefault());
+        }
+
+        // --- APP LIFECYCLE ---
+        function initApp() {
+            resize();
+            setupEventListeners();
+            // Seed minimal energy for responsiveness
+            setCell(LOGICAL_SIZE/2, LOGICAL_SIZE/2, 0.5);
+            requestAnimationFrame(loop);
+        }
+
+        function resize() {
+            const rect = container.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+            const dpr = window.devicePixelRatio || 2;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+
+        window.addEventListener('resize', resize);
+        window.addEventListener('load', initApp);
+    </script>
+</body>
+</html>
