@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Topographical Drone Engine</title>
+    <style>
+        /* RESET & LAYOUT */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        body {
+            background-color: #050508;
+            overflow: hidden;
+            font-family: "SF Mono", "Fira Code", monospace;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+        }
+
+        /* MAIN CANVAS CONTAINER */
+        #canvas-container {
+            position: relative;
+            width: 90vw;
+            height: 90vw;
+            max-width: 600px;
+            max-height: 600px;
+            margin-bottom: 20px;
+            background: #08080a;
+            border-radius: 12px;
+            box-shadow: 
+                0 40px 100px rgba(0,0,0,0.9),
+                0 0 0 1px rgba(255,255,255,0.05);
+            overflow: hidden;
+            transition: box-shadow 1s ease;
+        }
+
+        #canvas-container.active {
+             box-shadow: 
+                0 30px 120px rgba(20, 50, 80, 0.3),
+                0 0 0 1px rgba(100, 200, 255, 0.15);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            cursor: crosshair;
+        }
+
+        /* OVERLAYS */
+        #readout {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            text-align: right;
+            pointer-events: none;
+        }
+        
+        .label {
+            font-size: 0.65rem;
+            letter-spacing: 0.15em;
+            color: #555;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        
+        .value {
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+            color: #00d2ff; /* Cyan */
+            text-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
+            text-transform: uppercase;
+        }
+
+        #start-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            z-index: 10;
+            transition: opacity 0.5s;
+        }
+        
+        #start-text {
+            color: #fff;
+            font-size: 0.75rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 16px 32px;
+            border-radius: 4px;
+            background: rgba(0,0,0,0.8);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+
+        /* ENGINEERING PANEL */
+        #engineering-panel {
+            width: 90vw;
+            max-width: 600px;
+            background: #0a0a0e;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            opacity: 0;
+            animation: fadeUp 1.5s ease forwards 0.5s;
+        }
+
+        @keyframes fadeUp { to { opacity: 1; } }
+
+        h1 {
+            font-size: 0.8rem;
+            color: #ccc;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            margin-bottom: 10px;
+            text-align: center;
+            font-weight: 400;
+            opacity: 0.8;
+        }
+
+        /* SLIDERS */
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.65rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #666;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #1a1a20;
+            border-radius: 2px;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #444;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 0 2px #0a0a0e;
+        }
+        
+        input[type="range"]:hover::-webkit-slider-thumb {
+            background: #00d2ff;
+            transform: scale(1.2);
+        }
+
+        /* BUTTONS */
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #666;
+            padding: 12px 0;
+            font-family: inherit;
+            font-size: 0.65rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+        
+        .btn:hover { border-color: rgba(255,255,255,0.3); color: #aaa; }
+        
+        .btn.active {
+            background: rgba(255,255,255,0.03);
+            border-color: rgba(255,255,255,0.4);
+            color: #fff;
+            box-shadow: 0 0 20px rgba(255,255,255,0.05);
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Topographical Drone Engine</h1>
+
+    <div id="canvas-container">
+        <canvas id="lifeCanvas"></canvas>
+        <div id="readout">
+            <div class="label">Geometry Scanner</div>
+            <div class="value" id="status-val">Standby</div>
+        </div>
+        <div id="start-overlay">
+            <div id="start-text">Click or Touch to Activate Audio</div>
+        </div>
+    </div>
+
+    <div id="engineering-panel">
+        <div class="slider-container">
+            <div class="slider-header">
+                <span>Isoline Density</span>
+                <span id="val-density">8</span>
+            </div>
+            <input type="range" id="density-slider" min="3" max="12" step="1" value="8">
+        </div>
+
+        <div class="slider-container">
+            <div class="slider-header">
+                <span>Viscosity</span>
+                <span id="val-visc">0.006</span>
+            </div>
+            <input type="range" id="visc-slider" min="0.001" max="0.05" step="0.001" value="0.006">
+        </div>
+
+        <div class="controls">
+            <button class="btn active" id="mode-wire">Topography</button>
+            <button class="btn" id="mode-fluid">Density</button>
+            <button class="btn" id="btn-reset">Reset Field</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * TOPOGRAPHICAL DRONE ENGINE v3 (Finished)
+         * - Fixes: Ensured initial visual loop runs immediately and audio requires a distinct user gesture.
+         * - Audio: Cinematic Minor 9th Pads with filter sweeping.
+         * - Visuals: High-res Marching Squares for smooth, topographical isolines.
+         */
+
+        // --- CONFIGURATION ---
+        const LOGICAL_SIZE = 13; 
+        const RENDER_RES = 80;   
+        const TICK_RATE = 16; // ~60 FPS update rate (in ms) 
+        
+        // State
+        let logicalGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE);
+        let viscosityGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE);
+        let highResGrid = new Float32Array(RENDER_RES * RENDER_RES);
+        
+        let params = {
+            decayRate: 0.006, 
+            renderMode: 'wire',
+            contourLevels: 8
+        };
+
+        let isPlaying = true;
+        let lastTick = 0;
+        let time = 0;
+
+        // Canvas
+        const canvas = document.getElementById('lifeCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        const startOverlay = document.getElementById('start-overlay');
+        let width, height;
+
+        // Audio
+        let audioCtx, masterGain, pads = [];
+        let isAudioInit = false;
+
+        // --- INITIALIZATION ---
+        
+        function init() {
+            // Initial setup runs immediately on DOM load
+            resize();
+            
+            // Seed initial "Hill"
+            setCell(6, 6, 1); setCell(5, 6, 1); setCell(7, 6, 1);
+
+            // Start the visual render loop immediately
+            requestAnimationFrame(loop);
+        }
+        
+        function resize() {
+            const rect = container.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+            const dpr = window.devicePixelRatio || 2; 
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+
+        const getLIdx = (x, y) => y * LOGICAL_SIZE + x;
+        const getRIdx = (x, y) => y * RENDER_RES + x;
+
+        // --- PHYSICS ENGINE ---
+
+        function setCell(gx, gy, val) {
+            if (gx >= 0 && gx < LOGICAL_SIZE && gy >= 0 && gy < LOGICAL_SIZE) {
+                const idx = getLIdx(gx, gy);
+                logicalGrid[idx] = val;
+                if(val > 0) {
+                    // Add mass, capped at 2.5
+                    viscosityGrid[idx] = Math.min(viscosityGrid[idx] + 0.3, 2.5); 
+                }
+            }
+        }
+
+        function tick() {
+            time += 0.01;
+            let totalEnergy = 0;
+
+            const nextVisc = new Float32Array(viscosityGrid);
+            
+            for (let y = 1; y < LOGICAL_SIZE - 1; y++) {
+                for (let x = 1; x < LOGICAL_SIZE - 1; x++) {
+                    const idx = getLIdx(x, y);
+                    
+                    // Diffusion (Blur)
+                    let sum = 0;
+                    sum += viscosityGrid[getLIdx(x-1, y)];
+                    sum += viscosityGrid[getLIdx(x+1, y)];
+                    sum += viscosityGrid[getLIdx(x, y-1)];
+                    sum += viscosityGrid[getLIdx(x, y+1)];
+                    
+                    nextVisc[idx] = (viscosityGrid[idx] * 0.9) + (sum * 0.025);
+                    
+                    // Decay
+                    nextVisc[idx] = Math.max(nextVisc[idx] - params.decayRate, 0);
+
+                    totalEnergy += nextVisc[idx];
+                }
+            }
+            viscosityGrid = nextVisc;
+
+            // Upscale to High Res Grid (Bilinear)
+            for (let y = 0; y < RENDER_RES; y++) {
+                for (let x = 0; x < RENDER_RES; x++) {
+                    const lx = (x / (RENDER_RES - 1)) * (LOGICAL_SIZE - 1);
+                    const ly = (y / (RENDER_RES - 1)) * (LOGICAL_SIZE - 1);
+                    const x0 = Math.floor(lx); const y0 = Math.floor(ly);
+                    const x1 = Math.min(x0 + 1, LOGICAL_SIZE - 1);
+                    const y1 = Math.min(y0 + 1, LOGICAL_SIZE - 1);
+                    const tx = lx - x0; const ty = ly - y0;
+                    
+                    const v00 = viscosityGrid[getLIdx(x0, y0)];
+                    const v10 = viscosityGrid[getLIdx(x1, y0)];
+                    const v01 = viscosityGrid[getLIdx(x0, y1)];
+                    const v11 = viscosityGrid[getLIdx(x1, y1)];
+                    
+                    const top = v00 * (1 - tx) + v10 * tx;
+                    const bot = v01 * (1 - tx) + v11 * tx;
+                    const val = top * (1 - ty) + bot * ty;
+                    
+                    highResGrid[getRIdx(x, y)] = val;
+                }
+            }
+
+            if (isAudioInit) {
+                 modulateAudio(totalEnergy);
+            }
+        }
+
+        // --- RENDERER ---
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            
+            drawGrid();
+
+            if (params.renderMode === 'wire') {
+                drawWireframe();
+            } else {
+                drawFluid();
+            }
+        }
+
+        function drawGrid() {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            const step = width / 12;
+            
+            ctx.beginPath();
+            for(let x=0; x<=width; x+=step) {
+                ctx.moveTo(x, 0); ctx.lineTo(x, height);
+            }
+            for(let y=0; y<=height; y+=step) {
+                ctx.moveTo(0, y); ctx.lineTo(width, y);
+            }
+            ctx.stroke();
+        }
+
+        function drawWireframe() {
+            const cellW = width / (RENDER_RES - 1);
+            const cellH = height / (RENDER_RES - 1);
+            const levels = params.contourLevels;
+
+            for (let l = 1; l <= levels; l++) {
+                const threshold = (l / levels) * 1.5; 
+                
+                const hue = 180 + (l/levels) * 120; // Cyan -> Magenta
+                ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${0.1 + (l/levels)*0.8})`;
+                ctx.lineWidth = 1.2; 
+
+                ctx.beginPath();
+                for (let y = 0; y < RENDER_RES - 1; y++) {
+                    for (let x = 0; x < RENDER_RES - 1; x++) {
+                        const i = getRIdx(x, y);
+                        const v0 = highResGrid[i];
+                        const v1 = highResGrid[getRIdx(x+1, y)];
+                        const v2 = highResGrid[getRIdx(x+1, y+1)];
+                        const v3 = highResGrid[getRIdx(x, y+1)];
+                        
+                        const bin = (v0>threshold?8:0) | (v1>threshold?4:0) | (v2>threshold?2:0) | (v3>threshold?1:0);
+                        if (bin === 0 || bin === 15) continue;
+
+                        const a = {x: x + (threshold-v0)/(v1-v0), y: y};
+                        const b = {x: x + 1, y: y + (threshold-v1)/(v2-v1)};
+                        const c = {x: x + (threshold-v3)/(v2-v3), y: y + 1};
+                        const d = {x: x, y: y + (threshold-v0)/(v3-v0)};
+                        
+                        const sx = v => v.x * cellW;
+                        const sy = v => v.y * cellH;
+
+                        switch(bin) {
+                            case 1: case 14: ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); break;
+                            case 2: case 13: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); break;
+                            case 3: case 12: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(d), sy(d)); break;
+                            case 4: case 11: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); break;
+                            case 5: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); break;
+                            case 6: case 9: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(c), sy(c)); break;
+                            case 7: case 8: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); break;
+                            case 10: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); break;
+                        }
+                    }
+                }
+                ctx.stroke();
+            }
+        }
+
+        function drawFluid() {
+            // Density view (Fill)
+            const cellW = width / (RENDER_RES - 1);
+            const cellH = height / (RENDER_RES - 1);
+            
+            for (let i = 0; i < highResGrid.length; i++) {
+                const val = highResGrid[i];
+                if (val < 0.05) continue;
+                const x = (i % RENDER_RES) * cellW;
+                const y = Math.floor(i / RENDER_RES) * cellH;
+                
+                ctx.fillStyle = `rgba(0, 210, 255, ${val * 0.3})`;
+                ctx.fillRect(x, y, cellW+1, cellH+1);
+            }
+        }
+
+        function loop(timestamp) {
+            if (isPlaying && timestamp - lastTick > TICK_RATE) { 
+                tick();
+                lastTick = timestamp;
+            }
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // --- AUDIO ENGINE ---
+
+        class CinematicPad {
+            constructor(ctx, freq) {
+                this.ctx = ctx;
+                this.baseFreq = freq;
+                
+                this.osc1 = ctx.createOscillator();
+                this.osc1.type = 'sawtooth';
+                this.osc1.frequency.value = freq;
+                
+                this.osc2 = ctx.createOscillator();
+                this.osc2.type = 'sawtooth';
+                this.osc2.frequency.value = freq * 1.005; // Detune
+                
+                this.filter = ctx.createBiquadFilter();
+                this.filter.type = 'lowpass';
+                this.filter.Q.value = 2; 
+                
+                this.gain = ctx.createGain();
+                this.gain.gain.value = 0;
+                
+                this.pan = ctx.createStereoPanner();
+                this.pan.pan.value = (Math.random() * 2) - 1;
+
+                this.osc1.connect(this.filter);
+                this.osc2.connect(this.filter);
+                this.filter.connect(this.gain);
+                this.gain.connect(this.pan);
+                this.pan.connect(masterGain);
+                
+                this.osc1.start();
+                this.osc2.start();
+            }
+            
+            update(energy) {
+                const now = this.ctx.currentTime;
+                
+                const targetGain = 0.02 + (energy * 0.05);
+                this.gain.gain.setTargetAtTime(targetGain, now, 1.0);
+                
+                const targetFreq = 100 + (energy * 1500);
+                this.filter.frequency.setTargetAtTime(targetFreq, now, 1.5);
+            }
+        }
+
+        async function initAudio() {
+            if (isAudioInit) return;
+            console.log("Audio system initializing...");
+            
+            const AC = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AC();
+            
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.7;
+            
+            // Reverb (Warm tail)
+            const verb = audioCtx.createConvolver();
+            const len = audioCtx.sampleRate * 4;
+            const buf = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
+            for(let i=0; i<len; i++) {
+                const decay = Math.pow(1 - i/len, 3);
+                buf.getChannelData(0)[i] = (Math.random()*2-1)*decay*0.5;
+                buf.getChannelData(1)[i] = (Math.random()*2-1)*decay*0.5;
+            }
+            verb.buffer = buf;
+            
+            const wet = audioCtx.createGain(); wet.gain.value = 0.5; 
+            const dry = audioCtx.createGain(); dry.gain.value = 0.6;
+            
+            masterGain.connect(wet); wet.connect(verb); verb.connect(audioCtx.destination);
+            masterGain.connect(dry); dry.connect(audioCtx.destination);
+
+            // C Minor 9 Chord 
+            const freqs = [
+                65.41, 130.81, 155.56, 196.00, 233.08, 293.66, 311.13,
+            ];
+            
+            freqs.forEach(f => pads.push(new CinematicPad(audioCtx, f)));
+
+            // Attempt to resume audio context
+            if(audioCtx.state === 'suspended') {
+                 try {
+                    await audioCtx.resume();
+                    console.log("AudioContext resumed.");
+                } catch(e) {
+                    console.error("AudioContext resume failed:", e);
+                }
+            }
+
+            isAudioInit = true;
+            // Visual confirmation of initialization
+            startOverlay.style.opaci
