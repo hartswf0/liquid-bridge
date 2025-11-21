@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Morphogenic Field</title>
+    <style>
+        /* RESET & LAYOUT */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        body {
+            background-color: #020204;
+            overflow: hidden;
+            font-family: "SF Mono", "Fira Code", monospace;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+        }
+
+        /* MAIN CANVAS CONTAINER */
+        #canvas-container {
+            position: relative;
+            width: 90vw;
+            height: 90vw;
+            max-width: 600px;
+            max-height: 600px;
+            margin-bottom: 20px;
+            background: #000;
+            border-radius: 8px;
+            box-shadow: 
+                0 30px 80px rgba(0,0,0,0.8),
+                0 0 0 1px rgba(255,255,255,0.1);
+            overflow: hidden;
+            transition: box-shadow 1s ease;
+        }
+
+        #canvas-container.active {
+             box-shadow: 
+                0 30px 100px rgba(40, 20, 60, 0.4),
+                0 0 0 1px rgba(150, 100, 255, 0.3);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            cursor: crosshair;
+        }
+
+        /* CONTEXT ENGINEERING PANEL */
+        #engineering-panel {
+            width: 90vw;
+            max-width: 600px;
+            background: rgba(10, 10, 14, 0.9);
+            backdrop-filter: blur(16px);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            opacity: 0;
+            animation: fadeUp 1.5s ease forwards 0.5s;
+        }
+
+        @keyframes fadeUp { to { opacity: 1; } }
+
+        /* SLIDERS */
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 0.65rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+        .slider-group label { min-width: 100px; color: #666; }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            flex: 1;
+            height: 2px;
+            background: rgba(255,255,255,0.1);
+            outline: none;
+            border-radius: 2px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #aaa;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        input[type="range"]:hover::-webkit-slider-thumb {
+            background: #fff;
+            transform: scale(1.2);
+        }
+
+        /* TOGGLES */
+        .toggles {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+        .btn-mode {
+            flex: 1;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #666;
+            padding: 10px 0;
+            font-size: 0.6rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-radius: 4px;
+        }
+        .btn-mode:hover { background: rgba(255,255,255,0.05); }
+        .btn-mode.active {
+            border-color: #ccc;
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+            box-shadow: 0 0 15px rgba(255,255,255,0.1);
+        }
+
+        /* READOUT */
+        #readout {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 0.6rem;
+            line-height: 1.4;
+            color: rgba(255,255,255,0.3);
+            text-align: right;
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+        .active-text { color: #00ffaa; text-shadow: 0 0 10px rgba(0,255,170,0.5); }
+
+        /* Start Overlay */
+        #start-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.7);
+            z-index: 10;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        #start-text {
+            color: #fff;
+            font-size: 0.8rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            border: 1px solid #fff;
+            padding: 15px 25px;
+            border-radius: 30px;
+            background: rgba(0,0,0,0.8);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <canvas id="lifeCanvas"></canvas>
+        <div id="start-overlay"><div id="start-text">Touch to Morph</div></div>
+        <div id="readout">
+            MORPHOGENIC FIELD<br>
+            <span id="audio-status">SILENT</span>
+        </div>
+    </div>
+
+    <div id="engineering-panel">
+        <div class="slider-group">
+            <label>Drift Speed</label>
+            <input type="range" id="drift-slider" min="0.001" max="0.05" step="0.001" value="0.01">
+        </div>
+        <div class="slider-group">
+            <label>Texture</label>
+            <input type="range" id="texture-slider" min="0" max="1" step="0.1" value="0.6">
+        </div>
+        
+        <div class="toggles">
+            <button class="btn-mode active" id="mode-fluid">Morph</button>
+            <button class="btn-mode" id="mode-wire">Wire</button>
+            <button class="btn-mode" id="btn-clear">Reset</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * MORPHOGENIC DRONE ENGINE
+         * * 1. VISUALS: High-Res Marching Squares
+         * - Upscales the 9x9 grid to 60x60 using bilinear interpolation.
+         * - Renders continuous polygons (isobands) to eliminate "circle" artifacts.
+         * * 2. AUDIO: Granular Drift
+         * - Drones wander in pitch (microtonal).
+         * - Granular clicks provide texture.
+         * - Filters breathe autonomously.
+         */
+
+        // --- CONFIG ---
+        const LOGICAL_SIZE = 13; // 9x9 + padding
+        const RENDER_RES = 60;   // High res grid for marching squares
+        const TICK_RATE = 60;    // Physics update rate
+        
+        // State
+        let logicalGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE);
+        let viscosityGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE);
+        let highResGrid = new Float32Array(RENDER_RES * RENDER_RES);
+        
+        let params = {
+            decayRate: 0.006, 
+            renderMode: 'fluid', 
+            driftSpeed: 0.01,
+            textureAmount: 0.6
+        };
+
+        let isPlaying = true;
+        let lastTick = 0;
+        let time = 0; // For LFOs
+        
+        // Canvas
+        const canvas = document.getElementById('lifeCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        let width, height;
+
+        // Audio
+        let audioCtx, masterGain, drones = [], grainNode;
+        let isAudioInit = false;
+
+        // --- INIT ---
+        function init() {
+            resize();
+            
+            // Seed
+            setCell(6, 6, 1); setCell(5, 6, 1); setCell(7, 6, 1);
+            setCell(6, 5, 1); setCell(6, 7, 1);
+            
+            loop(0);
+        }
+
+        function resize() {
+            const rect = container.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+            const dpr = window.devicePixelRatio || 2; 
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+
+        const getLIdx = (x, y) => y * LOGICAL_SIZE + x;
+        const getRIdx = (x, y) => y * RENDER_RES + x;
+        
+        // --- LOGIC & PHYSICS ---
+
+        function setCell(gx, gy, val) {
+            // Map input coordinates (roughly 0-12) to logical grid
+            if (gx >= 0 && gx < LOGICAL_SIZE && gy >= 0 && gy < LOGICAL_SIZE) {
+                const idx = getLIdx(gx, gy);
+                logicalGrid[idx] = val;
+                if(val > 0) {
+                    viscosityGrid[idx] = Math.min(viscosityGrid[idx] + 0.4, 2.0); // Add mass
+                    triggerGrain(); // Audio feedback
+                }
+            }
+        }
+
+        function tick() {
+            time += params.driftSpeed;
+            
+            // 1. Game of Life / Physics Logic
+            const nextGrid = new Float32Array(LOGICAL_SIZE * LOGICAL_SIZE);
+            let totalMass = 0;
+
+            for (let y = 1; y < LOGICAL_SIZE - 1; y++) {
+                for (let x = 1; x < LOGICAL_SIZE - 1; x++) {
+                    const idx = getLIdx(x, y);
+                    
+                    // GOL Logic
+                    let neighbors = 0;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            neighbors += logicalGrid[getLIdx(x + dx, y + dy)];
+                        }
+                    }
+                    
+                    let nextState = logicalGrid[idx];
+                    if (logicalGrid[idx] === 1 && (neighbors < 2 || neighbors > 3)) nextState = 0;
+                    else if (logicalGrid[idx] === 0 && neighbors === 3) nextState = 1;
+                    nextGrid[idx] = nextState;
+
+                    // Viscosity Physics (Diffusion + Decay)
+                    if (nextState === 1) {
+                        viscosityGrid[idx] = Math.min(viscosityGrid[idx] + 0.1, 1.5);
+                    } else {
+                        viscosityGrid[idx] = Math.max(viscosityGrid[idx] - params.decayRate, 0);
+                    }
+
+                    // Simple Diffusion (Blur)
+                    // This creates the "Slope" for the marching squares
+                    const right = getLIdx(x+1, y);
+                    const down = getLIdx(x, y+1);
+                    const diffRate = 0.1;
+                    
+                    if (x < LOGICAL_SIZE - 1) {
+                        const delta = (viscosityGrid[idx] - viscosityGrid[right]) * diffRate;
+                        viscosityGrid[idx] -= delta; viscosityGrid[right] += delta;
+                    }
+                    if (y < LOGICAL_SIZE - 1) {
+                        const delta = (viscosityGrid[idx] - viscosityGrid[down]) * diffRate;
+                        viscosityGrid[idx] -= delta; viscosityGrid[down] += delta;
+                    }
+
+                    totalMass += viscosityGrid[idx];
+                }
+            }
+            logicalGrid = nextGrid;
+            
+            // 2. Upscale for Rendering (Bilinear Interpolation)
+            // We map the 13x13 grid to the 60x60 grid
+            for (let y = 0; y < RENDER_RES; y++) {
+                for (let x = 0; x < RENDER_RES; x++) {
+                    // Normalized position in logical grid
+                    const lx = (x / (RENDER_RES - 1)) * (LOGICAL_SIZE - 1);
+                    const ly = (y / (RENDER_RES - 1)) * (LOGICAL_SIZE - 1);
+                    
+                    const x0 = Math.floor(lx);
+                    const y0 = Math.floor(ly);
+                    const x1 = Math.min(x0 + 1, LOGICAL_SIZE - 1);
+                    const y1 = Math.min(y0 + 1, LOGICAL_SIZE - 1);
+                    
+                    const tx = lx - x0;
+                    const ty = ly - y0;
+                    
+                    // Bilinear interp
+                    const v00 = viscosityGrid[getLIdx(x0, y0)];
+                    const v10 = viscosityGrid[getLIdx(x1, y0)];
+                    const v01 = viscosityGrid[getLIdx(x0, y1)];
+                    const v11 = viscosityGrid[getLIdx(x1, y1)];
+                    
+                    const top = v00 * (1 - tx) + v10 * tx;
+                    const bot = v01 * (1 - tx) + v11 * tx;
+                    const val = top * (1 - ty) + bot * ty;
+                    
+                    highResGrid[getRIdx(x, y)] = val;
+                }
+            }
+
+            modulateAudio(totalMass);
+        }
+
+        // --- RENDERER (MARCHING SQUARES) ---
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // Background
+            const bg = ctx.createLinearGradient(0,0,0,height);
+            bg.addColorStop(0, '#0a0a12'); bg.addColorStop(1, '#000');
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, width, height);
+
+            if (params.renderMode === 'fluid') {
+                drawIsoBands();
+            } else {
+                drawWireframe();
+            }
+        }
+
+        function drawIsoBands() {
+            // Draw filled layers for "Fluid" look
+            // We render from Outside In (Low threshold to High threshold)
+            
+            const cellW = width / (RENDER_RES - 1);
+            const cellH = height / (RENDER_RES - 1);
+
+            const levels = [0.1, 0.3, 0.6, 0.9]; // Thresholds
+            const colors = [
+                'rgba(40, 20, 80, 0.3)',   // Deep Purple Halo
+                'rgba(60, 100, 200, 0.5)', // Blue Mid
+                'rgba(100, 200, 255, 0.7)', // Cyan High
+                'rgba(255, 255, 255, 0.9)'  // White Core
+            ];
+
+            // For each level, we run marching squares
+            for (let l = 0; l < levels.length; l++) {
+                const threshold = levels[l];
+                ctx.fillStyle = colors[l];
+                ctx.beginPath();
+
+                for (let y = 0; y < RENDER_RES - 1; y++) {
+                    for (let x = 0; x < RENDER_RES - 1; x++) {
+                        const i = getRIdx(x, y);
+                        const v0 = highResGrid[i];
+                        const v1 = highResGrid[getRIdx(x+1, y)];
+                        const v2 = highResGrid[getRIdx(x+1, y+1)];
+                        const v3 = highResGrid[getRIdx(x, y+1)];
+
+                        const bin = (v0>threshold?8:0) | (v1>threshold?4:0) | (v2>threshold?2:0) | (v3>threshold?1:0);
+                        
+                        if (bin === 0 || bin === 15) {
+                            if(bin===15) { // Fully inside, draw rect to fill
+                                ctx.rect(x*cellW, y*cellH, cellW, cellH);
+                            }
+                            continue;
+                        }
+
+                        // Interpolate edge positions
+                        const a = {x: x + (threshold-v0)/(v1-v0), y: y};
+                        const b = {x: x + 1, y: y + (threshold-v1)/(v2-v1)};
+                        const c = {x: x + (threshold-v3)/(v2-v3), y: y + 1};
+                        const d = {x: x, y: y + (threshold-v0)/(v3-v0)};
+                        
+                        // Scaling to screen
+                        const sx = v => v.x * cellW;
+                        const sy = v => v.y * cellH;
+
+                        // Simplified polygon drawing for contour
+                        // Ideally we trace loops, but for filling, standard MS triangles work if we draw per cell
+                        
+                        // Wait, for solid fill in Canvas, iterating cells and drawing polygons works
+                        // IF we include the corners.
+                        // Case 15 (all inside) is handled above.
+                        // Partial cases:
+                        const x0 = x*cellW, y0 = y*cellH, x1 = (x+1)*cellW, y1 = (y+1)*cellH;
+
+                        switch(bin) {
+                            case 1: ctx.moveTo(sx(d), sy(d)); ctx.lineTo(sx(c), sy(c)); ctx.lineTo(x0, y1); break; // TL corner? No, D is left, C is bottom. 1 is BL corner.
+                                    // Correct mapping: 0=TL, 1=TR, 2=BR, 3=BL in array. My bin logic: v0=TL(8), v1=TR(4), v2=BR(2), v3=BL(1).
+                                    // v3 is BL. 
+                                    ctx.moveTo(sx(d), sy(d)); ctx.lineTo(sx(c), sy(c)); ctx.lineTo(x0, y1); ctx.lineTo(sx(d), sy(d)); break;
+                            case 2: ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y1); ctx.lineTo(sx(c), sy(c)); break; // BR
+                            case 3: ctx.moveTo(sx(d), sy(d)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y1); ctx.lineTo(x0, y1); ctx.lineTo(sx(d), sy(d)); break; // BL+BR
+                            case 4: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y0); ctx.lineTo(sx(a), sy(a)); break; // TR
+                            case 5: // Saddle... skip complex saddle logic, just fill both
+                                    ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y0); 
+                                    ctx.moveTo(sx(d), sy(d)); ctx.lineTo(sx(c), sy(c)); ctx.lineTo(x0, y1); break;
+                            case 6: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(c), sy(c)); ctx.lineTo(x1, y1); ctx.lineTo(x1, y0); break; // TR+BR
+                            case 7: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.lineTo(x1, y0); break;
+                            case 8: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); ctx.lineTo(x0, y0); break; // TL
+                            case 9: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(c), sy(c)); ctx.lineTo(x0, y1); ctx.lineTo(x0, y0); break;
+                            case 10: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y0); 
+                                     ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); ctx.lineTo(x0, y1); break; // Saddle
+                            case 11: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y0); ctx.lineTo(x1, y1); ctx.lineTo(x0, y1); ctx.lineTo(sx(d), sy(d)); break; // Inv TR
+                            case 12: ctx.moveTo(sx(d), sy(d)); ctx.lineTo(sx(b), sy(b)); ctx.lineTo(x1, y0); ctx.lineTo(x0, y0); break;
+                            case 13: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); ctx.lineTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1, y0); break;
+                            case 14: ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); ctx.lineTo(x0, y0); ctx.lineTo(x1, y0); ctx.lineTo(x1, y1); break;
+                        }
+                    }
+                }
+                ctx.fill();
+            }
+        }
+
+        function drawWireframe() {
+            // Only draw the contour lines, no fill
+            const cellW = width / (RENDER_RES - 1);
+            const cellH = height / (RENDER_RES - 1);
+            const threshold = 0.5;
+
+            ctx.strokeStyle = '#00ffaa';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+
+            for (let y = 0; y < RENDER_RES - 1; y++) {
+                for (let x = 0; x < RENDER_RES - 1; x++) {
+                    const i = getRIdx(x, y);
+                    const v0 = highResGrid[i];
+                    const v1 = highResGrid[getRIdx(x+1, y)];
+                    const v2 = highResGrid[getRIdx(x+1, y+1)];
+                    const v3 = highResGrid[getRIdx(x, y+1)];
+                    
+                    const bin = (v0>threshold?8:0) | (v1>threshold?4:0) | (v2>threshold?2:0) | (v3>threshold?1:0);
+                    if (bin === 0 || bin === 15) continue;
+
+                    const a = {x: x + (threshold-v0)/(v1-v0), y: y};
+                    const b = {x: x + 1, y: y + (threshold-v1)/(v2-v1)};
+                    const c = {x: x + (threshold-v3)/(v2-v3), y: y + 1};
+                    const d = {x: x, y: y + (threshold-v0)/(v3-v0)};
+                    
+                    const sx = v => v.x * cellW;
+                    const sy = v => v.y * cellH;
+                    
+                    switch(bin) {
+                        case 1: case 14: ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); break;
+                        case 2: case 13: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); break;
+                        case 3: case 12: ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(d), sy(d)); break;
+                        case 4: case 11: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); break;
+                        case 5: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); ctx.moveTo(sx(b), sy(b)); ctx.lineTo(sx(c), sy(c)); break;
+                        case 6: case 9: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(c), sy(c)); break;
+                        case 7: case 8: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(d), sy(d)); break;
+                        case 10: ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.moveTo(sx(c), sy(c)); ctx.lineTo(sx(d), sy(d)); break;
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+
+        function loop(timestamp) {
+            if (isPlaying && timestamp - lastTick > TICK_RATE) {
+                tick();
+                lastTick = timestamp;
+            }
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // --- AUDIO ENGINE (Granular + Drift) ---
+        
+        class DriftingDrone {
+            constructor(ctx, baseFreq) {
+                this.ctx = ctx;
+                this.baseFreq = baseFreq;
+                
+                this.osc = ctx.createOscillator();
+                this.osc.type = 'triangle';
+                this.osc.frequency.value = baseFreq;
+                
+                // Drift LFO
+                this.lfo = ctx.createOscillator();
+                this.lfo.frequency.value = 0.05 + Math.random() * 0.1; // Slow drift
+                this.lfoGain = ctx.createGain();
+                this.lfoGain.gain.value = 5; // +/- 5Hz drift
+                this.lfo.connect(this.lfoGain);
+                this.lfoGain.connect(this.osc.frequency);
+                
+                this.filter = ctx.createBiquadFilter();
+                this.filter.type = 'lowpass';
+                this.filter.Q.value = 5;
+                
+                this.pan = ctx.createStereoPanner();
+                this.pan.pan.value = (Math.random() * 2) - 1;
+                
+                this.gain = ctx.createGain();
+                this.gain.gain.value = 0;
+                
+                this.osc.connect(this.filter);
+                this.filter.connect(this.gain);
+                this.gain.connect(this.pan);
+                this.pan.connect(masterGain);
+                
+                this.osc.start();
+                this.lfo.start();
+            }
+            
+            update(intensity, time) {
+                const now = this.ctx.currentTime;
+                // Volume morphs with intensity
+                this.gain.gain.setTargetAtTime(0.1 + (intensity * 0.3), now, 0.5);
+                
+                // Filter opens with intensity + LFO
+                const freqOffset = Math.sin(time + this.baseFreq) * 200;
+                const targetFreq = this.baseFreq * 2 + (intensity * 1000) + freqOffset;
+                this.filter.frequency.setTargetAtTime(targetFreq, now, 0.5);
+            }
+        }
+        
+        function triggerGrain() {
+            if(!isAudioInit || Math.random() > params.textureAmount) return;
+            
+            // Create a short burst of noise (crackle)
+            const dur = 0.05 + Math.random() * 0.1;
+            const t = audioCtx.currentTime;
+            
+            const osc = audioCtx.createOscillator();
+            osc.frequency.value = 800 + Math.random() * 2000;
+            osc.type = Math.random() > 0.5 ? 'square' : 'sawtooth';
+            
+            const env = audioCtx.createGain();
+            env.gain.setValueAtTime(0, t);
+            env.gain.linearRampToValueAtTime(0.05, t + 0.01);
+            env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+            
+            const pan = audioCtx.createStereoPanner();
+            pan.pan.value = (Math.random() * 2) - 1;
+            
+            osc.connect(env);
+            env.connect(pan);
+            pan.connect(masterGain);
+            
+            osc.start();
+            osc.stop(t + dur);
+        }
+
+        async function initAudio() {
+            if (isAudioInit) return;
+            const AC = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AC();
+            
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.8;
+            masterGain.connect(audioCtx.destination);
+            
+            // Reverb
+            const verb = audioCtx.createConvolver();
+            const len = audioCtx.sampleRate * 3;
+            const buf = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
+            for(let i=0; i<len; i++) {
+                const d = (1 - i/len);
+                buf.getChannelData(0)[i] = (Math.random()*2-1)*d;
+                buf.getChannelData(1)[i] = (Math.random()*2-1)*d;
+            }
+            verb.buffer = buf;
+            const wet = audioCtx.createGain(); wet.gain.value = 0.4;
+            masterGain.connect(wet); wet.connect(verb); verb.connect(audioCtx.destination);
+
+            // Drones: Fmaj7 Chord spread wide
+            const freqs = [87.31, 130.81, 174.61, 220.00, 261.63, 349.23];
+            freqs.forEach(f => drones.push(new DriftingDrone(audioCtx, f)));
+
+            isAudioInit = true;
+            document.getElementById('start-overlay').style.opacity = 0;
+            document.getElementById('audio-status').innerText = "ACTIVE // DRIFTING";
+            document.getElementById('audio-status').classList.add('active-text');
+            container.classList.add('active');
+            
+            if(audioCtx.state === 'suspended') await audioCtx.resume();
+        }
+
+        function modulateAudio(totalMass) {
+            if(!isAudioInit) return;
+            const intensity = Math.min(totalMass / 10, 1.0);
+            drones.forEach(d => d.update(intensity, time));
+        }
+
+        // --- INPUT ---
+
+        async function handleInput(e) {
+            e.preventDefault();
+            if (!isAudioInit) await initAudio();
+            
+            const rect = container.getBoundingClientRect();
+            const touches = e.touches || [{clientX: e.clientX, clientY: e.clientY}];
+            
+            for (let i = 0; i < touches.length; i++) {
+                const x = touches[i].clientX - rect.left;
+                const y = touches[i].clientY - rect.top;
+                
+                // Map logic coordinates
+                const gx = Math.floor((x / width) * LOGICAL_SIZE);
+                const gy = Math.floor((y / height) * LOGICAL_SIZE);
+                
+                setCell(gx, gy, 1);
+            }
+        }
+
+        // Listeners
+        canvas.addEventListener('mousedown', e => { handleInput(e); canvas.addEventListener('mousemove', handleInput); });
+        window.addEventListener('mouseup', () => canvas.removeEventListener('mousemove', handleInput));
+        canvas.addEventListener('touchstart', e => { handleInput(e); }, {passive: false});
+        canvas.addEventListener('touchmove', handleInput, {passive: false});
+
+        // UI
+        document.getElementById('drift-slider').addEventListener('input', e => params.driftSpeed = parseFloat(e.target.value));
+        document.getElementById('texture-slider').addEventListener('input', e => params.textureAmount = parseFloat(e.target.value));
+        
+        document.getElementById('mode-fluid').addEventListener('click', (e) => { params.renderMode = 'fluid'; updateBtns(e.target); });
+        document.getElementById('mode-wire').addEventListener('click', (e) => { params.renderMode = 'wire'; updateBtns(e.target); });
+        document.getElementById('btn-clear').addEventListener('click', () => { logicalGrid.fill(0); viscosityGrid.fill(0); });
+
+        function updateBtns(target) {
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+            target.classList.add('active');
+        }
+
+        window.addEventListener('resize', resize);
+        init();
+
+    </script>
+</body>
+</html>
+
+
