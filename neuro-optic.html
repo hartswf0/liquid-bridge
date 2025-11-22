@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Neural Sonification V2</title>
+    <style>
+        /* Global Reset and Mobile Focus */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* Disable native touch actions like pull-to-refresh */
+            touch-action: none; 
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            color: #e0f2fe; /* Light blue text */
+        }
+
+        #container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* --- Start Screen for Audio Context Unlock --- */
+        #tap-to-start {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            cursor: pointer;
+            transition: opacity 0.5s ease-out;
+            text-align: center;
+        }
+
+        #tap-to-start.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #start-text {
+            font-size: 1.5rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: #06b6d4; /* Cyan */
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+            animation: breathe 3s infinite ease-in-out;
+        }
+        
+        #start-subtext {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: rgba(224, 242, 254, 0.4);
+        }
+
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+
+        /* --- Status and Info Overlays --- */
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(224, 242, 254, 0.3);
+            font-size: 10px;
+            letter-spacing: 2px;
+            z-index: 1000;
+            pointer-events: none;
+            text-transform: uppercase;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #ff3366; /* Red for status */
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(224, 242, 254, 0.2);
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-align: center;
+            z-index: 1000;
+            pointer-events: none;
+            text-transform: uppercase;
+            opacity: 1;
+            transition: opacity 2s;
+        }
+
+        #instructions.hidden {
+            opacity: 0;
+        }
+
+        /* --- Interaction Ripple Feedback --- */
+        #touch-ripple {
+            position: fixed;
+            width: 100px;
+            height: 100px;
+            border: 2px solid rgba(6, 182, 212, 0.8);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.7);
+            transition: all 0.1s linear; /* Faster transition for responsive feel */
+        }
+
+        /* --- Slice Indicator UI --- */
+        .slice-indicator {
+            position: fixed;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 10px;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .slice-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(224, 242, 254, 0.1);
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .slice-dot.active {
+            background: #06b6d4;
+            box-shadow: 0 0 12px #06b6d4;
+            transform: scale(1.6);
+            border-color: #e0f2fe;
+        }
+
+        /* Mobile adjustments for slice indicator */
+        @media (max-width: 600px) {
+            .slice-indicator {
+                right: 5px;
+                gap: 8px;
+            }
+            .slice-dot {
+                width: 8px;
+                height: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    
+    <div id="tap-to-start">
+        <span id="start-text">Tap or Click to Activate Neural Core</span>
+        <span id="start-subtext">Requires user interaction to start the sound engine.</span>
+    </div>
+
+    <div id="status">
+        <span class="status-dot"></span>
+        <span id="status-text">INITIATING</span>
+    </div>
+
+    <div id="instructions">
+        Move vertical to select region • Move horizontal to shift tone • Pressure for depth
+    </div>
+
+    <div class="slice-indicator">
+        <div class="slice-dot" data-slice="0"></div>
+        <div class="slice-dot" data-slice="1"></div>
+        <div class="slice-dot" data-slice="2"></div>
+        <div class="slice-dot" data-slice="3"></div>
+        <div class="slice-dot" data-slice="4"></div>
+        <div class="slice-dot" data-slice="5"></div>
+        <div class="slice-dot" data-slice="6"></div>
+        <div class="slice-dot" data-slice="7"></div>
+    </div>
+
+    <div id="touch-ripple"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // ============================================
+        // NEURAL SONIFICATION INSTRUMENT V2
+        // ============================================
+
+        // Global state
+        let scene, camera, renderer, brain;
+        let audioContext, masterGain, sharedReverb;
+        let regions = [];
+        let isPlaying = false;
+        let appInitialized = false;
+
+        // Configuration
+        const SLICE_COUNT = 8;
+        const OSCILLATORS_PER_REGION = 12;
+        const BASE_COLOR = 0x06b6d4; // Cyan
+
+        // ============================================
+        // STARTUP MANAGEMENT (CRITICAL FOR MOBILE AUDIO)
+        // ============================================
+        
+        window.addEventListener('load', initApp);
+
+        function initApp() {
+            // Set up all visual (Three.js) components and audio nodes
+            // but keep the AudioContext in 'suspended' state.
+            setupThreeJS();
+            setupAudioNodes();
+            setupInteraction();
+            animate();
+            appInitialized = true;
+            document.getElementById('status-text').textContent = 'READY';
+
+            // Wait for user gesture on the start screen
+            const startScreen = document.getElementById('tap-to-start');
+            startScreen.addEventListener('mousedown', startApp, { once: true });
+            startScreen.addEventListener('touchstart', startApp, { once: true });
+        }
+
+        async function startApp() {
+            if (!appInitialized || !audioContext) return;
+            
+            // 1. Attempt to resume the AudioContext with the user gesture
+            try {
+                await audioContext.resume();
+                
+                // 2. Hide the start screen
+                const startScreen = document.getElementById('tap-to-start');
+                startScreen.classList.add('hidden');
+                setTimeout(() => startScreen.style.display = 'none', 500);
+
+                // 3. Hide instructions after a short delay
+                setTimeout(() => {
+                    document.getElementById('instructions').classList.add('hidden');
+                }, 5000);
+                
+                document.getElementById('status-text').textContent = 'LISTENING';
+                console.log("Audio Context resumed successfully.");
+
+            } catch (error) {
+                console.error("Error resuming AudioContext:", error);
+                document.getElementById('status-text').textContent = 'ERROR';
+            }
+        }
+
+
+        // ============================================
+        // THREE.JS SETUP
+        // ============================================
+        function setupThreeJS() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 1);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            brain = new THREE.Group();
+            
+            for (let i = 0; i < SLICE_COUNT; i++) {
+                const slice = createBrainSlice(i);
+                // Spread slices vertically
+                slice.position.y = (i - (SLICE_COUNT / 2 - 0.5)) * 0.4; 
+                brain.add(slice);
+            }
+
+            scene.add(brain);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x444444);
+            scene.add(ambientLight);
+
+            const pointLight = new THREE.PointLight(0xffffff, 0.5, 100);
+            pointLight.position.set(0, 0, 10);
+            scene.add(pointLight);
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createBrainSlice(index) {
+            const group = new THREE.Group();
+            
+            // 1. Organic Brain Cross-Section Shape
+            const shape = new THREE.Shape();
+            // Size variation based on position to simulate tapering
+            const size = 1.2 - (Math.abs(index - (SLICE_COUNT / 2 - 0.5)) * 0.15); 
+            
+            // Create irregular, organic shape
+            for (let i = 0; i < 32; i++) {
+                const angle = (i / 32) * Math.PI * 2;
+                // Add noise and lobed structure
+                const radius = size * (0.8 + Math.random() * 0.2) * (1 + Math.sin(angle * 3) * 0.15); 
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                
+                if (i === 0) {
+                    shape.moveTo(x, y);
+                } else {
+                    shape.lineTo(x, y);
+                }
+            }
+            shape.closePath();
+
+            // 2. Mesh Material and Geometry
+            const material = new THREE.MeshPhongMaterial({
+                color: BASE_COLOR,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.DoubleSide,
+                emissive: BASE_COLOR,
+                emissiveIntensity: 0.1
+            });
+
+            const geometry = new THREE.ShapeGeometry(shape);
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            mesh.userData = { index: index };
+
+            group.add(mesh);
+
+            // 3. Outline
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(
+                edges,
+                new THREE.LineBasicMaterial({ 
+                    color: BASE_COLOR, 
+                    transparent: true, 
+                    opacity: 0.5 
+                })
+            );
+            group.add(line);
+
+            // 4. Neural Particles
+            const particleCount = 60;
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * size * 2;
+                positions[i + 1] = (Math.random() - 0.5) * size * 2;
+                positions[i + 2] = 0; // Keep particles flat on the 2D slice
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                color: BASE_COLOR,
+                size: 0.03,
+                transparent: true,
+                opacity: 0.0,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            group.add(particles);
+            
+            group.userData.particles = particles;
+
+            return group;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ============================================
+        // WEB AUDIO SETUP (Nodes Only)
+        // ============================================
+        function setupAudioNodes() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Master Gain
+            masterGain = audioContext.createGain();
+            masterGain.gain.value = 0.3; 
+            
+            // Shared Delay/Reverb for sonic cohesion
+            sharedReverb = audioContext.createDelay(1.0);
+            sharedReverb.delayTime.value = 0.3;
+            const feedbackGain = audioContext.createGain();
+            feedbackGain.gain.value = 0.5;
+
+            // Simple Feedback Loop (crude reverb/echo)
+            sharedReverb.connect(feedbackGain);
+            feedbackGain.connect(sharedReverb);
+            
+            // Connect chain: Delay -> Master -> Destination
+            sharedReverb.connect(masterGain);
+            masterGain.connect(audioContext.destination);
+
+
+            // Create 8 brain regions (oscillator banks)
+            for (let i = 0; i < SLICE_COUNT; i++) {
+                const region = createBrainRegion(i);
+                regions.push(region);
+            }
+        }
+
+        function createBrainRegion(index) {
+            const region = {
+                index: index,
+                oscillators: [],
+                filters: [],
+                gains: [],
+                // Base frequency range for the region
+                baseFreq: 100 + (index * 60) 
+            };
+
+            for (let i = 0; i < OSCILLATORS_PER_REGION; i++) {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const filter = audioContext.createBiquadFilter();
+
+                // Detuned swarm for a thick, evolving texture
+                osc.type = ['sine', 'triangle', 'sawtooth'][Math.floor(i / 4)]; 
+                osc.frequency.value = region.baseFreq + (Math.random() * 40 - 20) + (i * 0.1);
+                
+                filter.type = 'lowpass';
+                filter.frequency.value = 4000;
+                filter.Q.value = 5;
+
+                gain.gain.value = 0.0001; // Ensure sound is not completely off for smooth ramp up/down
+
+                osc.connect(filter);
+                filter.connect(gain);
+                
+                // Connect 80% to master, 20% to shared reverb
+                gain.connect(masterGain, 0, 0); 
+                gain.connect(sharedReverb, 0, 0); 
+
+                osc.start();
+
+                region.oscillators.push(osc);
+                region.filters.push(filter);
+                region.gains.push(gain);
+            }
+
+            return region;
+        }
+
+        // ============================================
+        // INTERACTION AND SONIFICATION
+        // ============================================
+        function setupInteraction() {
+            const container = document.getElementById('container');
+            const ripple = document.getElementById('touch-ripple');
+
+            function handleInteraction(x, y, pressure = 0.5) {
+                if (audioContext.state !== 'running' || !appInitialized) return;
+
+                if (!isPlaying) {
+                    isPlaying = true;
+                    document.getElementById('status-text').textContent = 'RESONATING';
+                }
+
+                // Normalize coordinates (0 to 1)
+                const nx = x / window.innerWidth; // Horizontal (Tone/Filter control)
+                const ny = y / window.innerHeight; // Vertical (Slice selection)
+
+                // Map to brain parameters
+                const slice = Math.floor(ny * SLICE_COUNT);
+                
+                // Position/Tone: 0 (left) to 1 (right)
+                const position = nx; 
+                
+                // Depth: Min 0.2, Max 1.0 (clamped to prevent silent interactions)
+                const depth = Math.min(1.0, Math.max(0.2, pressure * 1.5)); 
+
+                // Visual feedback
+                showRipple(x, y, depth);
+                updateSliceIndicators(slice);
+
+                // Sonify the interaction
+                sonify(slice, position, depth);
+
+                // Update brain visualization
+                updateBrainVisualization(slice, position, depth);
+
+                // Haptic feedback
+                vibrate(10);
+            }
+
+            // Unified Touch/Mouse End Handler
+            const interactionEnd = () => {
+                if (audioContext.state !== 'running') return;
+                
+                fadeOutAudio();
+                isPlaying = false;
+                document.getElementById('status-text').textContent = 'LISTENING';
+                ripple.style.opacity = '0';
+            };
+
+
+            // --- Touch Events (Primary) ---
+            container.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                const pressure = touch.force || 0.5;
+                handleInteraction(touch.clientX, touch.clientY, pressure);
+            });
+
+            container.addEventListener('touchmove', (e) => {
+                const touch = e.touches[0];
+                const pressure = touch.force || 0.5;
+                handleInteraction(touch.clientX, touch.clientY, pressure);
+            });
+
+            container.addEventListener('touchend', interactionEnd);
+
+
+            // --- Mouse Events (Secondary) ---
+            let mouseDown = false;
+
+            container.addEventListener('mousedown', (e) => {
+                mouseDown = true;
+                handleInteraction(e.clientX, e.clientY, 0.6); // Simulate medium pressure
+            });
+
+            container.addEventListener('mousemove', (e) => {
+                if (mouseDown) {
+                    handleInteraction(e.clientX, e.clientY, 0.6);
+                }
+            });
+
+            container.addEventListener('mouseup', () => {
+                mouseDown = false;
+                interactionEnd();
+            });
+
+            container.addEventListener('mouseleave', () => {
+                if (mouseDown) {
+                    mouseDown = false;
+                    interactionEnd();
+                }
+            });
+        }
+
+        function showRipple(x, y, depth) {
+            const ripple = document.getElementById('touch-ripple');
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            ripple.style.opacity = '1';
+            // Scale based on depth/pressure
+            ripple.style.transform = `translate(-50%, -50%) scale(${1 + depth * 1.5})`; 
+        }
+
+        function updateSliceIndicators(activeSlice) {
+            document.querySelectorAll('.slice-dot').forEach((dot, index) => {
+                if (index === activeSlice) {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
+                }
+            });
+        }
+
+        function sonify(slice, position, depth) {
+            const now = audioContext.currentTime;
+            
+            regions.forEach((region, i) => {
+                const distance = Math.abs(i - slice) / SLICE_COUNT;
+                const influence = Math.max(0, 1 - distance * 2); // Stronger influence near the center
+
+                region.oscillators.forEach((osc, j) => {
+                    const gainNode = region.gains[j];
+                    const filterNode = region.filters[j];
+                    
+                    // 1. Gain/Volume (Controlled by Depth and Influence)
+                    const targetGain = influence * depth * 0.08;
+                    gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.1);
+
+                    // 2. Frequency (Controlled by Horizontal Position)
+                    // Position ranges from 0 to 1, modulating up to 150% of base frequency
+                    const freqMod = position * 0.5; 
+                    const targetFreq = region.baseFreq * (1 + freqMod) + (j * 0.5);
+                    osc.frequency.linearRampToValueAtTime(targetFreq, now + 0.1);
+
+                    // 3. Filter Cutoff (Controlled by Depth/Pressure)
+                    // Depth 0.2-1.0 maps to filter range 1000Hz - 8000Hz
+                    const targetFilter = 1000 + (depth * 7000); 
+                    filterNode.frequency.linearRampToValueAtTime(targetFilter, now + 0.1);
+                });
+            });
+        }
+
+        function fadeOutAudio() {
+            const now = audioContext.currentTime;
+            regions.forEach(region => {
+                region.gains.forEach(gain => {
+                    gain.gain.linearRampToValueAtTime(0.0001, now + 0.5); // Smoother fade-out
+                });
+            });
+        }
+
+        // ============================================
+        // VISUALIZATION UPDATE
+        // ============================================
+        function updateBrainVisualization(slice, position, depth) {
+            brain.children.forEach((sliceGroup, i) => {
+                const mesh = sliceGroup.children[0];
+                const particles = sliceGroup.userData.particles;
+                
+                const distance = Math.abs(i - slice) / SLICE_COUNT;
+                const influence = Math.max(0, 1 - distance * 2);
+
+                // --- Mesh Appearance (Opacity & Glow) ---
+                mesh.material.opacity = 0.2 + (influence * 0.4 * depth);
+                mesh.material.emissiveIntensity = 0.1 + (influence * 0.8 * depth);
+                
+                // --- Particle Activity ---
+                particles.material.opacity = influence * 0.9 * depth;
+                particles.material.size = 0.03 + (influence * 0.05 * depth);
+                
+                // --- Slice Rotation (Horizontal position feedback) ---
+                // Rotate based on position (0 to 1) for visual feedback
+                sliceGroup.rotation.z = position * Math.PI * 0.5; 
+            });
+        }
+
+        // ============================================
+        // HAPTIC FEEDBACK
+        // ============================================
+        function vibrate(duration) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(duration);
+            }
+        }
+
+        // ============================================
+        // ANIMATION LOOP
+        // ============================================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Gentle continuous rotation
+            brain.rotation.y += 0.002;
+            brain.rotation.x = Math.sin(Date.now() * 0.0001) * 0.05;
+
+            // Animate particles within their slices
+            brain.children.forEach(sliceGroup => {
+                const particles = sliceGroup.userData.particles;
+                if (particles && particles.material.opacity > 0.01) {
+                    const positions = particles.geometry.attributes.position.array;
+                    const size = 1.2; // Approximate size of slice
+                    
+                    for (let i = 0; i < positions.length; i += 3) {
+                        // Small random movement (neural firing)
+                        positions[i] += (Math.random() - 0.5) * 0.005 * particles.material.opacity;
+                        positions[i + 1] += (Math.random() - 0.5) * 0.005 * particles.material.opacity;
+                        
+                        // Keep particles loosely within bounds (wrap around slightly)
+                        if (Math.abs(positions[i]) > size) positions[i] *= -0.8;
+                        if (Math.abs(positions[i + 1]) > size) positions[i + 1] *= -0.8;
+                    }
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
+
